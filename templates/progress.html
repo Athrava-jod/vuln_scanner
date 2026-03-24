@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Scanning… – VulnScanX{% endblock %}
+
+{% block content %}
+<section class="py-5">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-lg-6 text-center">
+
+        <div class="progress-card">
+          <!-- Animated radar icon -->
+          <div class="radar-anim mb-4">
+            <i class="bi bi-radar"></i>
+          </div>
+
+          <h2 class="page-title mb-1">Scanning in Progress</h2>
+          <p class="text-muted mb-4" id="statusMsg">Initialising scan engine…</p>
+
+          <!-- Progress Bar -->
+          <div class="progress-wrap mb-3">
+            <div class="progress" style="height:12px; border-radius:6px;">
+              <div class="progress-bar progress-bar-striped progress-bar-animated bg-accent"
+                   id="progressBar" role="progressbar" style="width: 0%;" aria-valuenow="0"
+                   aria-valuemin="0" aria-valuemax="100">
+              </div>
+            </div>
+          </div>
+          <div class="d-flex justify-content-between text-muted small mb-4">
+            <span id="pctLabel">0%</span>
+            <span id="stepLabel">Preparing…</span>
+          </div>
+
+          <!-- Step indicators -->
+          <div class="scan-steps mb-4">
+            <div class="scan-step" id="step1">
+              <i class="bi bi-circle step-dot"></i>
+              <span>Port Scanning</span>
+            </div>
+            <div class="scan-step" id="step2">
+              <i class="bi bi-circle step-dot"></i>
+              <span>SQL Injection Check</span>
+            </div>
+            <div class="scan-step" id="step3">
+              <i class="bi bi-circle step-dot"></i>
+              <span>XSS Detection</span>
+            </div>
+            <div class="scan-step" id="step4">
+              <i class="bi bi-circle step-dot"></i>
+              <span>Header Analysis</span>
+            </div>
+            <div class="scan-step" id="step5">
+              <i class="bi bi-circle step-dot"></i>
+              <span>Generating Report</span>
+            </div>
+          </div>
+
+          <div id="errorMsg" class="alert alert-danger d-none"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const SCAN_ID  = "{{ scan_id }}";
+const API_URL  = `/api/progress/${SCAN_ID}`;
+let   intervalId;
+
+const steps = [
+  { id: 'step1', range: [10, 48] },
+  { id: 'step2', range: [52, 68] },
+  { id: 'step3', range: [68, 78] },
+  { id: 'step4', range: [78, 88] },
+  { id: 'step5', range: [92, 99] },
+];
+
+const stepMessages = [
+  [10, 'Running nmap port scan…'],
+  [50, 'Analysing web forms for SQLi…'],
+  [68, 'Testing XSS reflection…'],
+  [78, 'Auditing HTTP security headers…'],
+  [92, 'Calculating CVSS score…'],
+  [95, 'Generating PDF report…'],
+];
+
+function setStepActive(pct) {
+  steps.forEach(s => {
+    const el  = document.getElementById(s.id);
+    const dot = el.querySelector('.step-dot');
+    if (pct >= s.range[1]) {
+      dot.className  = 'bi bi-check-circle-fill step-dot done';
+      el.classList.add('done');
+    } else if (pct >= s.range[0]) {
+      dot.className  = 'bi bi-arrow-right-circle-fill step-dot active';
+      el.classList.add('active');
+    }
+  });
+}
+
+function updateMessage(pct) {
+  let msg = 'Initialising…';
+  for (const [threshold, text] of stepMessages) {
+    if (pct >= threshold) msg = text;
+  }
+  document.getElementById('stepLabel').textContent = msg;
+}
+
+function poll() {
+  fetch(API_URL)
+    .then(r => r.json())
+    .then(data => {
+      if (data.done) {
+        clearInterval(intervalId);
+        if (data.error) {
+          document.getElementById('progressBar').style.width = '100%';
+          document.getElementById('progressBar').classList.add('bg-danger');
+          document.getElementById('errorMsg').classList.remove('d-none');
+          document.getElementById('errorMsg').textContent = 'Scan error: ' + data.error;
+          document.getElementById('statusMsg').textContent = 'Scan failed.';
+        } else {
+          document.getElementById('progressBar').style.width = '100%';
+          document.getElementById('statusMsg').textContent = 'Scan complete! Redirecting…';
+          document.getElementById('pctLabel').textContent  = '100%';
+          setTimeout(() => { window.location.href = `/results/${data.record_id}`; }, 800);
+        }
+      } else {
+        const pct = data.progress || 0;
+        document.getElementById('progressBar').style.width = pct + '%';
+        document.getElementById('progressBar').setAttribute('aria-valuenow', pct);
+        document.getElementById('pctLabel').textContent = pct + '%';
+        setStepActive(pct);
+        updateMessage(pct);
+      }
+    })
+    .catch(err => console.error('Poll error:', err));
+}
+
+intervalId = setInterval(poll, 1200);
+poll(); // immediate first call
+</script>
+{% endblock %}

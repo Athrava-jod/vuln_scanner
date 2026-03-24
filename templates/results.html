@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block title %}Scan Results - VulnScanX{% endblock %}
+
+{% block content %}
+<section class="py-5">
+  <div class="container">
+
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+      <div>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary mb-2">
+          <i class="bi bi-arrow-left me-1"></i>Dashboard
+        </a>
+        <h1 class="page-title mb-1"><i class="bi bi-clipboard-data accent me-2"></i>Scan Results</h1>
+        <p class="text-muted font-mono">{{ record.target }}</p>
+      </div>
+      <div class="d-flex flex-column align-items-end gap-2">
+        {% if record.report_path %}
+        <a href="{{ url_for('report', record_id=record.id) }}" class="btn btn-success">
+          <i class="bi bi-file-earmark-pdf me-2"></i>Download PDF Report
+        </a>
+        {% endif %}
+        <span class="text-muted small">{{ record.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</span>
+      </div>
+    </div>
+
+    {% set total_findings = vulns|length + malware|length %}
+    <div class="row g-3 mb-4">
+      <div class="col-md-3">
+        <div class="result-summary-card text-center">
+          <div class="small text-muted mb-1">RISK LEVEL</div>
+          <div class="risk-badge-lg risk-{{ record.risk_level | lower }}">{{ record.risk_level }}</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="result-summary-card text-center">
+          <div class="small text-muted mb-1">CVSS SCORE</div>
+          <div class="cvss-large">{{ record.cvss_score }}</div>
+          <div class="text-muted small">out of 10.0</div>
+          <div class="cvss-bar mt-2">
+            <div class="cvss-bar-fill" style="width: {{ (record.cvss_score / 10 * 100)|int }}%"></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="result-summary-card text-center">
+          <div class="small text-muted mb-1">TOTAL FINDINGS</div>
+          <div class="stat-large {% if total_findings > 0 %}text-danger{% else %}text-success{% endif %}">{{ total_findings }}</div>
+          <div class="text-muted small">{{ vulns|length }} web, {{ malware|length }} malware</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="result-summary-card text-center">
+          {% set open_ports = ports | selectattr('state', 'equalto', 'open') | list %}
+          <div class="small text-muted mb-1">OPEN PORTS</div>
+          <div class="stat-large text-warning">{{ open_ports|length }}</div>
+          <div class="text-muted small">of {{ ports|length }} scanned</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-4">
+      <div class="col-lg-5">
+        <div class="result-card h-100">
+          <div class="result-card-header">
+            <h5 class="mb-0"><i class="bi bi-hdd-network me-2 accent"></i>Port Scan Results</h5>
+          </div>
+          <div class="result-card-body">
+            {% if ports %}
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Port</th>
+                    <th>Service</th>
+                    <th>State</th>
+                    <th>Risk</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for p in ports if p.state == 'open' %}
+                  <tr>
+                    <td class="font-mono">{{ p.port }}</td>
+                    <td>
+                      <span class="fw-semibold">{{ p.service }}</span>
+                      {% if p.version %}
+                        <br/><small class="text-muted">{{ p.version }}</small>
+                      {% endif %}
+                    </td>
+                    <td><span class="badge bg-success">open</span></td>
+                    <td><span class="risk-badge risk-{{ p.risk | lower }}">{{ p.risk }}</span></td>
+                  </tr>
+                  {% else %}
+                  <tr><td colspan="4" class="text-center text-muted py-3">No open ports found</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <p class="text-muted py-3 text-center">Port scan not run for this target.</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-7">
+        <div class="result-card h-100">
+          <div class="result-card-header">
+            <h5 class="mb-0"><i class="bi bi-bug me-2 accent"></i>Web Vulnerability Findings</h5>
+          </div>
+          <div class="result-card-body">
+            {% if vulns %}
+              <div class="accordion" id="vulnAccordion">
+                {% for v in vulns %}
+                <div class="accordion-item vuln-item sev-{{ v.severity | lower }}">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#vuln{{ loop.index }}">
+                      <span class="risk-badge risk-{{ v.severity | lower }} me-2">{{ v.severity }}</span>
+                      {{ v.name }}
+                    </button>
+                  </h2>
+                  <div id="vuln{{ loop.index }}" class="accordion-collapse collapse" data-bs-parent="#vulnAccordion">
+                    <div class="accordion-body">
+                      <p class="mb-2"><strong>Description:</strong> {{ v.description }}</p>
+                      {% if v.evidence %}
+                      <div class="evidence-box">
+                        <strong>Evidence:</strong><br/>
+                        <code>{{ v.evidence }}</code>
+                      </div>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="text-center py-4">
+                <i class="bi bi-shield-check fs-1 text-success"></i>
+                <h5 class="mt-3 text-success">No Web Vulnerabilities Detected</h5>
+                <p class="text-muted small">The web scan found no obvious vulnerabilities.</p>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <div class="result-card">
+          <div class="result-card-header">
+            <h5 class="mb-0"><i class="bi bi-shield-shaded me-2 accent"></i>Malware Detection Summary</h5>
+          </div>
+          <div class="result-card-body">
+            {% if malware_summary and malware_summary.scanned %}
+            <div class="row g-3">
+              <div class="col-md-3">
+                <div class="header-chip header-present">
+                  <strong class="small">Engine</strong>
+                  <div class="text-muted smaller mt-1 font-mono">{{ malware_summary.engine }}</div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="header-chip header-present">
+                  <strong class="small">Files Scanned</strong>
+                  <div class="text-muted smaller mt-1 font-mono">{{ malware_summary.files_scanned or 0 }}</div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="header-chip {% if malware|length %}header-missing{% else %}header-present{% endif %}">
+                  <strong class="small">Malware Findings</strong>
+                  <div class="text-muted smaller mt-1 font-mono">{{ malware|length }}</div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="header-chip header-present">
+                  <strong class="small">Highest Severity</strong>
+                  <div class="text-muted smaller mt-1 font-mono">{{ malware_summary.highest_severity or 'Info' }}</div>
+                </div>
+              </div>
+            </div>
+            {% if malware_summary.families %}
+            <div class="mt-3">
+              <strong class="small">Families Detected</strong>
+              <div class="d-flex flex-wrap gap-2 mt-2">
+                {% for family, count in malware_summary.families.items() %}
+                <span class="risk-badge risk-high">{{ family }}: {{ count }}</span>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+            {% else %}
+            <p class="text-muted mb-0">{{ malware_summary.reason or 'Malware detection did not run for this target.' }}</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <div class="result-card">
+          <div class="result-card-header">
+            <h5 class="mb-0"><i class="bi bi-bug-fill me-2 accent"></i>Malware Findings</h5>
+          </div>
+          <div class="result-card-body">
+            {% if malware %}
+              <div class="accordion" id="malwareAccordion">
+                {% for m in malware %}
+                <div class="accordion-item vuln-item sev-{{ m.severity | lower }}">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#malware{{ loop.index }}">
+                      <span class="risk-badge risk-{{ m.severity | lower }} me-2">{{ m.severity }}</span>
+                      {{ m.family }} - {{ m.name }}
+                    </button>
+                  </h2>
+                  <div id="malware{{ loop.index }}" class="accordion-collapse collapse" data-bs-parent="#malwareAccordion">
+                    <div class="accordion-body">
+                      <p class="mb-2"><strong>Detection Type:</strong> {{ m.detection_type | upper }}</p>
+                      <p class="mb-2"><strong>File:</strong> <code>{{ m.file }}</code></p>
+                      <p class="mb-2"><strong>Description:</strong> {{ m.description }}</p>
+                      <p class="mb-2"><strong>Confidence:</strong> {{ m.confidence }}</p>
+                      {% if m.evidence %}
+                      <div class="evidence-box">
+                        <strong>Evidence:</strong><br/>
+                        <code>{{ m.evidence }}</code>
+                      </div>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="text-center py-4">
+                <i class="bi bi-shield-check fs-1 text-success"></i>
+                <h5 class="mt-3 text-success">No Malware Indicators Detected</h5>
+                <p class="text-muted small">YARA, hash, signature, and heuristic checks did not flag the scanned files.</p>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if headers %}
+      <div class="col-12">
+        <div class="result-card">
+          <div class="result-card-header">
+            <h5 class="mb-0"><i class="bi bi-shield-exclamation me-2 accent"></i>HTTP Security Headers</h5>
+          </div>
+          <div class="result-card-body">
+            <div class="row g-3">
+              {% for header, value in headers.items() %}
+              <div class="col-md-6 col-lg-4">
+                <div class="header-chip {% if value == 'MISSING' %}header-missing{% else %}header-present{% endif %}">
+                  <div class="d-flex align-items-center gap-2">
+                    <i class="bi {% if value == 'MISSING' %}bi-x-circle-fill text-danger{% else %}bi-check-circle-fill text-success{% endif %}"></i>
+                    <strong class="small">{{ header }}</strong>
+                  </div>
+                  <div class="text-muted smaller mt-1 font-mono">{{ value if value != 'MISSING' else '- not set -' }}</div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+</section>
+{% endblock %}

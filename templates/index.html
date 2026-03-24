@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}VulnScanX – Web & Port Vulnerability Scanner{% endblock %}
+
+{% block content %}
+<!-- ── HERO ──────────────────────────────────────────────────────────────── -->
+<section class="hero-section">
+  <div class="hero-bg-grid"></div>
+  <div class="container">
+    <div class="row align-items-center min-vh-80">
+      <div class="col-lg-7">
+        <div class="hero-badge mb-3"><i class="bi bi-shield-check me-2"></i>Security Scanning Tool</div>
+        <h1 class="hero-title">
+          Discover Vulnerabilities<br/>
+          <span class="accent">Before Attackers Do</span>
+        </h1>
+        <p class="hero-subtitle">
+          VulnScanX performs advanced port scanning with nmap and deep web
+          vulnerability analysis — detecting SQLi, XSS, open redirects, and
+          missing security headers — with CVSS-based risk scoring.
+        </p>
+        <div class="d-flex flex-wrap gap-3 mt-4">
+          {% if current_user.is_authenticated %}
+            <a href="{{ url_for('scan') }}" class="btn btn-accent btn-lg">
+              <i class="bi bi-radar me-2"></i>Start Scanning
+            </a>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-accent btn-lg">
+              <i class="bi bi-grid me-2"></i>Dashboard
+            </a>
+          {% else %}
+            <a href="{{ url_for('register') }}" class="btn btn-accent btn-lg">
+              <i class="bi bi-rocket me-2"></i>Get Started Free
+            </a>
+            <a href="{{ url_for('login') }}" class="btn btn-outline-accent btn-lg">
+              <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+            </a>
+          {% endif %}
+        </div>
+      </div>
+      <div class="col-lg-5 d-none d-lg-flex justify-content-center">
+        <div class="hero-terminal">
+          <div class="terminal-header">
+            <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+            <span class="ms-3 terminal-title">vulnscanx ~ scanner</span>
+          </div>
+          <div class="terminal-body" id="termAnim">
+            <div class="term-line"><span class="prompt">$</span> vulnscanx --target example.com --full</div>
+            <div class="term-line blink-line"><span class="prompt">▶</span> <span class="t-green">Initialising scan engine...</span></div>
+            <div class="term-line"><span class="prompt">▶</span> Port 22/tcp  <span class="t-green">open</span>  SSH</div>
+            <div class="term-line"><span class="prompt">▶</span> Port 80/tcp  <span class="t-green">open</span>  HTTP</div>
+            <div class="term-line"><span class="prompt">▶</span> Port 443/tcp <span class="t-green">open</span>  HTTPS</div>
+            <div class="term-line"><span class="prompt">▶</span> <span class="t-yellow">SQLi detected in /search?q=</span></div>
+            <div class="term-line"><span class="prompt">▶</span> <span class="t-red">XSS reflected in contact form</span></div>
+            <div class="term-line"><span class="prompt">▶</span> Missing: Content-Security-Policy</div>
+            <div class="term-line"><span class="prompt">▶</span> CVSS Score: <span class="t-red">8.2 HIGH</span></div>
+            <div class="term-line"><span class="prompt">▶</span> <span class="t-green">PDF report generated ✓</span></div>
+            <div class="term-line blink">█</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FEATURES GRID ─────────────────────────────────────────────────────── -->
+<section class="features-section py-5">
+  <div class="container">
+    <h2 class="section-title text-center mb-5">What VulnScanX Detects</h2>
+    <div class="row g-4">
+      {% set features = [
+        ('bi-database-x',    '#ff4444', 'SQL Injection',          'Tests form fields and URL parameters with classic SQLi payloads and detects database error signatures.'),
+        ('bi-code-slash',    '#ff8800', 'Cross-Site Scripting',   'Injects XSS payloads into all form inputs and checks if they are reflected unescaped in the response.'),
+        ('bi-arrow-right-circle', '#ffcc00', 'Open Redirect',    'Probes redirect parameters with external URLs and catches unsafe 3xx redirects.'),
+        ('bi-shield-x',     '#3399ff', 'Missing Headers',        'Audits HTTP response headers for CSP, HSTS, X-Frame-Options and more.'),
+        ('bi-hdd-network',  '#00d4aa', 'Port Scanning',          'Uses nmap with service detection to identify open ports and exposed services.'),
+        ('bi-file-earmark-pdf', '#cc88ff', 'PDF Reports',        'Auto-generates a detailed downloadable PDF report with findings and recommendations.'),
+      ] %}
+      {% for icon, color, title, desc in features %}
+      <div class="col-md-6 col-lg-4">
+        <div class="feature-card">
+          <div class="feature-icon" style="color:{{ color }}">
+            <i class="bi {{ icon }}"></i>
+          </div>
+          <h5 class="feature-title">{{ title }}</h5>
+          <p class="feature-desc">{{ desc }}</p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- ── HOW IT WORKS ──────────────────────────────────────────────────────── -->
+<section class="how-section py-5">
+  <div class="container">
+    <h2 class="section-title text-center mb-5">How It Works</h2>
+    <div class="row g-4 justify-content-center">
+      {% set steps = [
+        ('1', 'bi-person-plus',  'Register & Login', 'Create a free account to access the scanner and save your scan history.'),
+        ('2', 'bi-crosshair',    'Enter Target',     'Enter any URL or IP address you own or have permission to test.'),
+        ('3', 'bi-cpu',          'Automated Scan',   'Our multi-threaded engine runs port scanning and vulnerability checks simultaneously.'),
+        ('4', 'bi-file-bar-graph', 'Review & Export', 'View colour-coded results with CVSS scoring and download the PDF report.'),
+      ] %}
+      {% for num, icon, title, desc in steps %}
+      <div class="col-sm-6 col-lg-3">
+        <div class="step-card text-center">
+          <div class="step-number">{{ num }}</div>
+          <i class="bi {{ icon }} step-icon accent"></i>
+          <h6 class="mt-3 fw-bold">{{ title }}</h6>
+          <p class="text-muted small">{{ desc }}</p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- ── WARNING BANNER ─────────────────────────────────────────────────────── -->
+<section class="py-4">
+  <div class="container">
+    <div class="warning-banner d-flex align-items-start gap-3">
+      <i class="bi bi-exclamation-triangle-fill warning-icon mt-1"></i>
+      <div>
+        <strong>Legal & Ethical Notice</strong>
+        <p class="mb-0 mt-1">
+          VulnScanX is an educational tool intended for authorised security testing only.
+          Scanning systems without explicit permission from the owner is illegal under the
+          Computer Fraud and Abuse Act (CFAA), Computer Misuse Act, and similar laws worldwide.
+          Always obtain written permission before scanning any system.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

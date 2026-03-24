@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Login – VulnScanX{% endblock %}
+
+{% block content %}
+<section class="auth-section">
+  <div class="container">
+    <div class="row justify-content-center min-vh-70 align-items-center">
+      <div class="col-md-8 col-lg-5">
+        <div class="auth-card">
+
+          <div class="auth-header text-center mb-4">
+            <div class="auth-icon mb-3"><i class="bi bi-shield-lock"></i></div>
+            <h2 class="auth-title">Welcome Back</h2>
+            <p class="text-muted">Sign in to your VulnScanX account</p>
+          </div>
+
+          <form method="POST" action="{{ url_for('login') }}" novalidate>
+            <div class="mb-3">
+              <label class="form-label" for="username">Username</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-person"></i></span>
+                <input type="text" class="form-control" id="username" name="username"
+                       placeholder="Enter username" required autofocus/>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label" for="password">Password</label>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                <input type="password" class="form-control" id="password" name="password"
+                       placeholder="Enter password" required/>
+                <button class="btn btn-outline-secondary" type="button" id="togglePwd">
+                  <i class="bi bi-eye" id="eyeIcon"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="mb-4 d-flex justify-content-between align-items-center">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="remember" name="remember"/>
+                <label class="form-check-label" for="remember">Remember me</label>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-accent w-100 btn-lg">
+              <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+            </button>
+          </form>
+
+          <hr class="my-4"/>
+          <p class="text-center mb-0">
+            Don't have an account? <a href="{{ url_for('register') }}" class="accent">Register here</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('togglePwd').addEventListener('click', () => {
+  const pwd  = document.getElementById('password');
+  const icon = document.getElementById('eyeIcon');
+  if (pwd.type === 'password') { pwd.type = 'text'; icon.className = 'bi bi-eye-slash'; }
+  else                         { pwd.type = 'password'; icon.className = 'bi bi-eye'; }
+});
+</script>
+{% endblock %}
