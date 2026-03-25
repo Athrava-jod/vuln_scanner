@@ -357,12 +357,19 @@ def results(record_id):
 @app.route('/report/<int:record_id>')
 @login_required
 def report(record_id):
+    from scanner.report_gen import generate_pdf_report
+
     record = ScanResult.query.filter_by(id=record_id, user_id=current_user.id).first_or_404()
-    if record.report_path and os.path.exists(record.report_path):
-        return send_file(record.report_path, as_attachment=True,
-                         download_name=f'vulnscanx_report_{record_id}.pdf')
-    flash('Report not found. Re-run the scan to regenerate.', 'warning')
-    return redirect(url_for('results', record_id=record_id))
+    if not record.report_path or not os.path.exists(record.report_path):
+        os.makedirs(app.config['REPORTS_FOLDER'], exist_ok=True)
+        pdf_filename = f"report_{record.id}_{int(datetime.utcnow().timestamp())}.pdf"
+        pdf_path = os.path.join(app.config['REPORTS_FOLDER'], pdf_filename)
+        generate_pdf_report(record, pdf_path)
+        record.report_path = pdf_path
+        db.session.commit()
+
+    return send_file(record.report_path, as_attachment=True,
+                     download_name=f'vulnscanx_report_{record_id}.pdf')
 
 
 @app.route('/delete/<int:record_id>', methods=['POST'])

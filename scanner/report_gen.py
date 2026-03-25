@@ -115,7 +115,12 @@ def generate_pdf_report(record, output_path: str):
     story.append(HRFlowable(width='100%', thickness=1, color=C_ACCENT))
     story.append(Spacer(1, 0.3 * cm))
     if malware_summary.get('scanned'):
-        summary_rows = [['Engine', malware_summary.get('engine', 'unknown')], ['Files Scanned', str(malware_summary.get('files_scanned', 0))], ['Highest Severity', malware_summary.get('highest_severity', 'Info')], ['Families', ', '.join(f"{k}:{v}" for k, v in malware_summary.get('families', {}).items()) or 'None']]
+        summary_rows = [
+            ['Engine', malware_summary.get('engine', 'unknown')],
+            ['Files Scanned', str(malware_summary.get('files_scanned', 0))],
+            ['Highest Severity', malware_summary.get('highest_severity', 'Info')],
+            ['Families', ', '.join(f"{k}:{v}" for k, v in malware_summary.get('families', {}).items()) or 'None'],
+        ]
         summary_table = Table(summary_rows, colWidths=[4 * cm, 12 * cm])
         summary_table.setStyle(_table_base())
         story.append(summary_table)
@@ -186,7 +191,11 @@ def _append_findings_table(story, findings, malware_mode=False):
         ]))
         story.append(ht)
 
-        detail_rows = [['Description', item.get('description', '')], ['Evidence', item.get('evidence', 'N/A')]]
+        detail_rows = [
+            ['Description', item.get('description', '')],
+            ['Evidence', item.get('evidence', 'N/A')],
+            ['Solution', _solution_for_finding(item, malware_mode=malware_mode)],
+        ]
         if malware_mode:
             detail_rows.insert(0, ['Detection Type', item.get('detection_type', 'unknown').upper()])
             detail_rows.insert(1, ['File', item.get('file', '')])
@@ -269,3 +278,40 @@ def _build_recommendations(vulns, malware, ports, hdrs) -> list:
     if not recs:
         recs.append('No critical issues found. Perform regular security audits and keep software updated.')
     return recs
+
+
+def _solution_for_finding(item, malware_mode=False) -> str:
+    if malware_mode:
+        family = item.get('family', '')
+        detection_type = item.get('detection_type', '')
+        if family == 'Trojan':
+            return 'Quarantine the file, isolate the affected host, remove persistence entries, and review outbound command-and-control traffic.'
+        if family == 'Worm':
+            return 'Isolate the system from the network, disable lateral-movement paths, inspect shared folders, and scan neighboring hosts.'
+        if family == 'Ransomware':
+            return 'Disconnect the host immediately, preserve forensic evidence, restore from clean backups, and rotate exposed credentials.'
+        if family == 'Rootkit':
+            return 'Treat the host as untrusted, rebuild from known-good media, and verify firmware, drivers, and startup entries before reconnecting.'
+        if family == 'Spyware':
+            return 'Remove the sample, rotate user credentials and session tokens, and review browser, clipboard, camera, and microphone access.'
+        if family == 'Keylogger':
+            return 'Remove the file, rotate all typed credentials, reissue MFA secrets if needed, and inspect the host for keyboard hooks or hidden logs.'
+        if detection_type == 'hash':
+            return 'Block the exact hash across endpoint controls and search the environment for additional copies of the same sample.'
+        return 'Quarantine the file, validate it with endpoint protection, and investigate the host for persistence and related artifacts.'
+
+    name = item.get('name', '')
+    if 'SQL Injection' in name:
+        return 'Use parameterized queries, validate inputs server-side, and avoid building SQL statements with string concatenation.'
+    if 'Cross-Site Scripting' in name or 'XSS' in name:
+        return 'Encode untrusted output, sanitize rich content, and add a strict Content-Security-Policy.'
+    if 'Open Redirect' in name:
+        return 'Allow only trusted redirect destinations or use server-side route names instead of user-controlled URLs.'
+    if 'Sensitive File Exposure' in name:
+        return 'Remove exposed backup or config files from the web root and deny direct access at the web server level.'
+    if 'Missing Header' in name:
+        header = name.split(':', 1)[-1].strip()
+        return f'Configure the application or reverse proxy to send the {header} header with a secure value.'
+    if 'Connection Error' in name:
+        return 'Verify the target URL, DNS resolution, routing, firewall rules, and whether the application is reachable from the scanner.'
+    return 'Review the affected component, patch the vulnerable code path, and retest after remediation.'
