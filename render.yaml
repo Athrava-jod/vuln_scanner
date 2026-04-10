@@ -1,11 +1,15 @@
 services:
   - type: web
     name: vulnscanx
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    env: docker
+    plan: free # Change to 'starter' if using a persistent disk
     envVars:
       - key: SECRET_KEY
         generateValue: true
-      - key: PYTHON_VERSION
-        value: 3.11.0
+      - key: MONGO_URI
+        sync: false # Paste your link in the Render Dashboard instead for security!
+#    disk:
+#      name: reports-data
+#      mountPath: /app/static/reports
+#      sizeGB: 1
+

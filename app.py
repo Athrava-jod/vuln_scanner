@@ -1,41 +1,48 @@
 """
 ╔══════════════════════════════════════════════════════════╗
 ║   VulnScanX – Web & Port Vulnerability Scanner           ║
-║   Flask Application – Main Entry Point                   ║
+║   Flask Application – Main Entry Point (MongoDB)         ║
 ╚══════════════════════════════════════════════════════════╝
 Author  : Engineering Mini-Project
-Purpose : Orchestrates all routes, auth, DB, and scan jobs
+Purpose : Orchestrates all routes, auth, DB (MongoDB), and scan jobs
 """
 
 import os, json, threading
 from datetime import datetime
+from bson import ObjectId
 
 from flask import (Flask, render_template, request, redirect,
                    url_for, flash, jsonify, send_file)
-from flask_sqlalchemy import SQLAlchemy
 from flask_login import (LoginManager, UserMixin, login_user,
                           logout_user, login_required, current_user)
-from sqlalchemy import inspect, text
 from werkzeug.security import generate_password_hash, check_password_hash
+from pymongo import MongoClient
 
 # ──────────────────────────────────────────────────────────────
 # App & Config
 # ──────────────────────────────────────────────────────────────
 app = Flask(__name__)
-app.config['SECRET_KEY']                     = os.environ.get('SECRET_KEY', 'vulnscanx-dev-secret-2024')
-app.config['SQLALCHEMY_DATABASE_URI']        = 'sqlite:///vulnscanx.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['REPORTS_FOLDER']                 = os.path.join('static', 'reports')
+app.config['SECRET_KEY']      = os.environ.get('SECRET_KEY', 'vulnscanx-dev-secret-2024')
+app.config['MONGO_URI']       = os.environ.get('MONGO_URI', 'mongodb://localhost:27017/vulnscanx')
+app.config['REPORTS_FOLDER']  = os.environ.get('REPORTS_FOLDER', os.path.join('static', 'reports'))
 
-db            = SQLAlchemy(app)
+# Ensure reports folder exists
+os.makedirs(app.config['REPORTS_FOLDER'], exist_ok=True)
+
+# MongoDB Initialization
+client = MongoClient(app.config['MONGO_URI'])
+db     = client.get_default_database()
+
 login_manager = LoginManager(app)
 
 # Custom Jinja2 filter: parse JSON string inside templates
-import json as _json
 @app.template_filter('fromjson')
 def fromjson_filter(s):
-    try:   return _json.loads(s)
+    if not s: return []
+    if isinstance(s, (list, dict)): return s
+    try:    return json.loads(s)
     except: return []
+
 login_manager.login_view             = 'login'
 login_manager.login_message          = 'Please log in to access this page.'
 login_manager.login_message_category = 'warning'
@@ -44,41 +51,24 @@ login_manager.login_message_category = 'warning'
 scan_progress = {}
 
 # ──────────────────────────────────────────────────────────────
-# Database Models
+# Database Models (MongoDB Wrapper)
 # ──────────────────────────────────────────────────────────────
 
-class User(UserMixin, db.Model):
-    """Admin / User account model"""
-    __tablename__ = 'users'
-    id         = db.Column(db.Integer, primary_key=True)
-    username   = db.Column(db.String(80),  unique=True, nullable=False)
-    email      = db.Column(db.String(120), unique=True, nullable=False)
-    password   = db.Column(db.String(200), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    scans      = db.relationship('ScanResult', backref='owner', lazy=True)
-
-
-class ScanResult(db.Model):
-    """Stores results for every completed scan"""
-    __tablename__ = 'scan_results'
-    id              = db.Column(db.Integer, primary_key=True)
-    target          = db.Column(db.String(255), nullable=False)
-    scan_type       = db.Column(db.String(20))            # port | web | full
-    risk_level      = db.Column(db.String(20))            # Low / Medium / High / Critical
-    cvss_score      = db.Column(db.Float, default=0.0)
-    open_ports      = db.Column(db.Text, default='[]')    # JSON list
-    vulnerabilities = db.Column(db.Text, default='[]')    # JSON list
-    malware_findings = db.Column(db.Text, default='[]')   # JSON list
-    malware_summary  = db.Column(db.Text, default='{}')   # JSON dict
-    headers_info    = db.Column(db.Text, default='{}')    # JSON dict
-    report_path     = db.Column(db.String(255))
-    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
-    user_id         = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-
+class User(UserMixin):
+    """User object for Flask-Login"""
+    def __init__(self, user_data):
+        self.id       = str(user_data['_id'])
+        self.username = user_data['username']
+        self.email    = user_data['email']
+        self.password = user_data['password']
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    try:
+        user_data = db.users.find_one({'_id': ObjectId(user_id)})
+        return User(user_data) if user_data else None
+    except:
+        return None
 
 # ──────────────────────────────────────────────────────────────
 # Helpers
@@ -98,33 +88,13 @@ def _risk_from_cvss(score: float) -> str:
     return 'Critical'
 
 
-def _ensure_scan_result_columns():
-    """Backfill new columns for existing SQLite databases."""
-    wanted = {
-        'malware_findings': "ALTER TABLE scan_results ADD COLUMN malware_findings TEXT DEFAULT '[]'",
-        'malware_summary': "ALTER TABLE scan_results ADD COLUMN malware_summary TEXT DEFAULT '{}'",
-    }
-    existing = {col['name'] for col in inspect(db.engine).get_columns('scan_results')}
-    for column_name, ddl in wanted.items():
-        if column_name not in existing:
-            db.session.execute(text(ddl))
-    db.session.commit()
-
-
 def _is_local_target(target: str) -> bool:
     return os.path.exists(os.path.expanduser(target.strip()))
 
 
 def run_scan_background(app_ctx, scan_id, target, scan_type, user_id):
     """
-    Runs in a daemon thread.
-    1. Port scan  (nmap wrapper)
-    2. Vuln scan  (requests + BeautifulSoup)
-    3. CVSS score calculation
-    4. DB write
-    5. PDF report generation
-    Updates scan_progress[scan_id] throughout so the frontend
-    progress bar stays live.
+    Runs in a daemon thread. Updates scan_progress and writes to MongoDB.
     """
     from scanner.port_scanner import run_port_scan
     from scanner.vuln_scanner import run_vuln_scan
@@ -174,32 +144,46 @@ def run_scan_background(app_ctx, scan_id, target, scan_type, user_id):
             risk_level = _risk_from_cvss(cvss_score)
 
             scan_progress[scan_id] = 95
-            record = ScanResult(
-                target=target,
-                scan_type=scan_type,
-                risk_level=risk_level,
-                cvss_score=round(cvss_score, 1),
-                open_ports=json.dumps(open_ports),
-                vulnerabilities=json.dumps(vulnerabilities),
-                malware_findings=json.dumps(malware_findings),
-                malware_summary=json.dumps(malware_summary),
-                headers_info=json.dumps(headers_info),
-                user_id=user_id,
-            )
-            db.session.add(record)
-            db.session.commit()
+            
+            # Record dictionary for MongoDB
+            record = {
+                'target': target,
+                'scan_type': scan_type,
+                'risk_level': risk_level,
+                'cvss_score': round(cvss_score, 1),
+                'open_ports': open_ports,
+                'vulnerabilities': vulnerabilities,
+                'malware_findings': malware_findings,
+                'malware_summary': malware_summary,
+                'headers_info': headers_info,
+                'user_id': ObjectId(user_id),
+                'created_at': datetime.utcnow(),
+                'report_path': None
+            }
+            
+            result = db.scans.insert_one(record)
+            record_id = str(result.inserted_id)
 
             scan_progress[scan_id] = 97
             os.makedirs(app.config['REPORTS_FOLDER'], exist_ok=True)
-            pdf_filename = f"report_{record.id}_{int(datetime.utcnow().timestamp())}.pdf"
+            pdf_filename = f"report_{record_id}_{int(datetime.utcnow().timestamp())}.pdf"
             pdf_path = os.path.join(app.config['REPORTS_FOLDER'], pdf_filename)
-            generate_pdf_report(record, pdf_path)
-            record.report_path = pdf_path
-            db.session.commit()
+            
+            # Since generate_pdf_report might expect a class, we pass the dict
+            # We might need to wrap it or modify generate_pdf_report. 
+            # For simplicity, we add 'id' to the dict for the generator.
+            record['id'] = record_id
+            from types import SimpleNamespace
+            obj_record = SimpleNamespace(**record)
+            generate_pdf_report(obj_record, pdf_path)
+            
+            db.scans.update_one({'_id': ObjectId(record_id)}, {'$set': {'report_path': pdf_path}})
 
-            scan_progress[scan_id] = {'done': True, 'record_id': record.id}
+            scan_progress[scan_id] = {'done': True, 'record_id': record_id}
 
         except Exception as exc:
+            import traceback
+            traceback.print_exc()
             scan_progress[scan_id] = {'done': True, 'error': str(exc)}
 
 # Routes – Public
@@ -228,19 +212,22 @@ def register():
             errors.append('Passwords do not match.')
         if len(password) < 8:
             errors.append('Password must be at least 8 characters.')
-        if User.query.filter_by(username=username).first():
+        if db.users.find_one({'username': username}):
             errors.append('Username already taken.')
-        if User.query.filter_by(email=email).first():
+        if db.users.find_one({'email': email}):
             errors.append('Email already registered.')
 
         for e in errors:
             flash(e, 'danger')
 
         if not errors:
-            user = User(username=username, email=email,
-                        password=generate_password_hash(password))
-            db.session.add(user)
-            db.session.commit()
+            user_data = {
+                'username': username,
+                'email': email,
+                'password': generate_password_hash(password),
+                'created_at': datetime.utcnow()
+            }
+            db.users.insert_one(user_data)
             flash('Account created! Please log in.', 'success')
             return redirect(url_for('login'))
 
@@ -255,9 +242,10 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
-        user     = User.query.filter_by(username=username).first()
+        user_data = db.users.find_one({'username': username})
 
-        if user and check_password_hash(user.password, password):
+        if user_data and check_password_hash(user_data['password'], password):
+            user = User(user_data)
             login_user(user, remember=bool(request.form.get('remember')))
             flash(f'Welcome back, {user.username}!', 'success')
             return redirect(request.args.get('next') or url_for('dashboard'))
@@ -281,14 +269,18 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    scans  = ScanResult.query.filter_by(user_id=current_user.id)\
-                             .order_by(ScanResult.created_at.desc()).all()
+    scans_cursor = db.scans.find({'user_id': ObjectId(current_user.id)}).sort('created_at', -1)
+    scans = []
+    for s in scans_cursor:
+        s['id'] = str(s['_id'])
+        scans.append(s)
+        
     totals = dict(
         total    = len(scans),
-        critical = sum(1 for s in scans if s.risk_level == 'Critical'),
-        high     = sum(1 for s in scans if s.risk_level == 'High'),
-        medium   = sum(1 for s in scans if s.risk_level == 'Medium'),
-        low      = sum(1 for s in scans if s.risk_level in ('Low', 'Info')),
+        critical = sum(1 for s in scans if s.get('risk_level') == 'Critical'),
+        high     = sum(1 for s in scans if s.get('risk_level') == 'High'),
+        medium   = sum(1 for s in scans if s.get('risk_level') == 'Medium'),
+        low      = sum(1 for s in scans if s.get('risk_level') in ('Low', 'Info')),
     )
     return render_template('dashboard.html', scans=scans, **totals)
 
@@ -339,57 +331,77 @@ def api_progress(scan_id):
     return jsonify({'progress': status})
 
 
-@app.route('/results/<int:record_id>')
+@app.route('/results/<record_id>')
 @login_required
 def results(record_id):
-    record  = ScanResult.query.filter_by(id=record_id, user_id=current_user.id).first_or_404()
-    ports   = json.loads(record.open_ports      or '[]')
-    vulns   = json.loads(record.vulnerabilities or '[]')
-    malware = json.loads(record.malware_findings or '[]')
-    malware_summary = json.loads(record.malware_summary or '{}')
-    headers = json.loads(record.headers_info    or '{}')
+    try:
+        record = db.scans.find_one({'_id': ObjectId(record_id), 'user_id': ObjectId(current_user.id)})
+    except:
+        return "Invalid ID Format", 400
+        
+    if not record:
+        return "Not Found", 404
+    
+    record['id'] = str(record['_id'])
+    
     return render_template('results.html',
-                           record=record, ports=ports,
-                           vulns=vulns, malware=malware,
-                           malware_summary=malware_summary, headers=headers)
+                           record=record, 
+                           ports=record.get('open_ports', []),
+                           vulns=record.get('vulnerabilities', []), 
+                           malware=record.get('malware_findings', []),
+                           malware_summary=record.get('malware_summary', {}), 
+                           headers=record.get('headers_info', {}))
 
 
-@app.route('/report/<int:record_id>')
+@app.route('/report/<record_id>')
 @login_required
 def report(record_id):
-    from scanner.report_gen import generate_pdf_report
-
-    record = ScanResult.query.filter_by(id=record_id, user_id=current_user.id).first_or_404()
-    if not record.report_path or not os.path.exists(record.report_path):
+    try:
+        record = db.scans.find_one({'_id': ObjectId(record_id), 'user_id': ObjectId(current_user.id)})
+    except:
+        return "Invalid ID Format", 400
+        
+    if not record:
+        return "Not Found", 404
+        
+    if not record.get('report_path') or not os.path.exists(record['report_path']):
+        from scanner.report_gen import generate_pdf_report
         os.makedirs(app.config['REPORTS_FOLDER'], exist_ok=True)
-        pdf_filename = f"report_{record.id}_{int(datetime.utcnow().timestamp())}.pdf"
+        pdf_filename = f"report_{record_id}_{int(datetime.utcnow().timestamp())}.pdf"
         pdf_path = os.path.join(app.config['REPORTS_FOLDER'], pdf_filename)
-        generate_pdf_report(record, pdf_path)
-        record.report_path = pdf_path
-        db.session.commit()
+        
+        record['id'] = str(record['_id'])
+        from types import SimpleNamespace
+        obj_record = SimpleNamespace(**record)
+        generate_pdf_report(obj_record, pdf_path)
+        
+        db.scans.update_one({'_id': ObjectId(record_id)}, {'$set': {'report_path': pdf_path}})
+        report_file = pdf_path
+    else:
+        report_file = record['report_path']
 
-    return send_file(record.report_path, as_attachment=True,
+    return send_file(report_file, as_attachment=True,
                      download_name=f'vulnscanx_report_{record_id}.pdf')
 
 
-@app.route('/delete/<int:record_id>', methods=['POST'])
+@app.route('/delete/<record_id>', methods=['POST'])
 @login_required
 def delete_scan(record_id):
-    record = ScanResult.query.filter_by(id=record_id, user_id=current_user.id).first_or_404()
-    if record.report_path and os.path.exists(record.report_path):
-        os.remove(record.report_path)
-    db.session.delete(record)
-    db.session.commit()
+    try:
+        record = db.scans.find_one({'_id': ObjectId(record_id), 'user_id': ObjectId(current_user.id)})
+    except:
+        return "Invalid ID Format", 400
+        
+    if not record:
+        return "Not Found", 404
+        
+    if record.get('report_path') and os.path.exists(record['report_path']):
+        os.remove(record['report_path'])
+    
+    db.scans.delete_one({'_id': ObjectId(record_id)})
     flash('Scan record deleted.', 'info')
     return redirect(url_for('dashboard'))
 
-
-# ──────────────────────────────────────────────────────────────
-# Init DB & run
-# ──────────────────────────────────────────────────────────────
-with app.app_context():
-    db.create_all()
-    _ensure_scan_result_columns()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
