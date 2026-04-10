@@ -31,7 +31,11 @@ os.makedirs(app.config['REPORTS_FOLDER'], exist_ok=True)
 
 # MongoDB Initialization
 client = MongoClient(app.config['MONGO_URI'])
-db     = client.get_default_database()
+# Use 'vulnscanx' as the default database if not specified in the URI
+try:
+    db = client.get_default_database()
+except:
+    db = client.get_database("vulnscanx")
 
 login_manager = LoginManager(app)
 
