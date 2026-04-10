@@ -45,11 +45,19 @@ def generate_pdf_report(record, output_path: str):
     styles = getSampleStyleSheet()
     story = []
 
-    ports = json.loads(record.open_ports or '[]')
-    vulns = json.loads(record.vulnerabilities or '[]')
-    malware = json.loads(getattr(record, 'malware_findings', '[]') or '[]')
-    malware_summary = json.loads(getattr(record, 'malware_summary', '{}') or '{}')
-    hdrs = json.loads(record.headers_info or '{}')
+    def _safe_load(data, default):
+        if isinstance(data, (list, dict)):
+            return data
+        try:
+            return json.loads(data or ( '[]' if isinstance(default, list) else '{}' ))
+        except:
+            return default
+
+    ports = _safe_load(record.open_ports, [])
+    vulns = _safe_load(record.vulnerabilities, [])
+    malware = _safe_load(getattr(record, 'malware_findings', []), [])
+    malware_summary = _safe_load(getattr(record, 'malware_summary', {}), {})
+    hdrs = _safe_load(record.headers_info, {})
 
     title_style = ParagraphStyle('Title', parent=styles['Title'], fontSize=28, textColor=C_ACCENT, alignment=TA_CENTER, spaceAfter=6)
     sub_style = ParagraphStyle('Sub', parent=styles['Normal'], fontSize=12, textColor=C_GRAY, alignment=TA_CENTER, spaceAfter=4)
