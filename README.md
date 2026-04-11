@@ -127,26 +127,7 @@ anchors the score; each additional finding adds 15% of its weight; open
 risky ports (Telnet, RDP, Redis, etc.) add a 20% bonus. Final score is
 clamped to [0–10] and mapped to Info/Low/Medium/High/Critical.
 
----
-
-## Deploy to Render (Free Tier)
-
-1. Push code to GitHub
-2. Go to render.com → New → Web Service → connect repo
-3. Render detects `render.yaml` automatically
-4. Set environment variable `SECRET_KEY` to a random 32-character string
-5. Deploy — your app is live in ~2 minutes
-
-## Deploy to Heroku
-
-```bash
-heroku create my-vulnscanx
-heroku config:set SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
-git push heroku main
-heroku open
-```
-
----
+-
 
 ## Legal Notice
 
